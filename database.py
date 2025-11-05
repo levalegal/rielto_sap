@@ -622,11 +622,26 @@ class Database:
             cursor.execute("""
                 INSERT INTO deals (demand_id, offer_id)
                 VALUES (?, ?)
+            """, (demand_id, offer_id))
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при добавлении сделки: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def update_deal(self, deal_id: int, demand_id: int, offer_id: int):
         cursor = self.conn.cursor()
         cursor.execute("""
             UPDATE deals 
             SET demand_id = ?, offer_id = ?
             WHERE id = ?
+        """, (demand_id, offer_id, deal_id))
+        self.conn.commit()
+    
+    def delete_deal(self, deal_id: int):
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM deals WHERE id = ?", (deal_id,))
         self.conn.commit()
