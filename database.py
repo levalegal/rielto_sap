@@ -184,6 +184,17 @@ class Database:
             cursor.execute("""
                 INSERT INTO realtors (surname, name, patronymic, commission_share)
                 VALUES (?, ?, ?, ?)
+            """, (surname.strip(), name.strip(), patronymic.strip(), commission_share))
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при добавлении риэлтора: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def update_realtor(self, realtor_id: int, surname: str, name: str, patronymic: str, commission_share: Optional[float] = None):
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT id FROM realtors WHERE id = ?", (realtor_id,))
@@ -199,6 +210,16 @@ class Database:
                 UPDATE realtors 
                 SET surname = ?, name = ?, patronymic = ?, commission_share = ?
                 WHERE id = ?
+            """, (surname.strip(), name.strip(), patronymic.strip(), commission_share, realtor_id))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при обновлении риэлтора: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def delete_realtor(self, realtor_id: int) -> bool:
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT id FROM realtors WHERE id = ?", (realtor_id,))
@@ -229,6 +250,12 @@ class Database:
                 SELECT * FROM realtors 
                 WHERE surname LIKE ? OR name LIKE ? OR patronymic LIKE ?
                 ORDER BY surname, name, patronymic
+            """, (search_pattern, search_pattern, search_pattern))
+        else:
+            cursor.execute("SELECT * FROM realtors ORDER BY surname, name, patronymic")
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def get_realtor(self, realtor_id: int) -> Optional[Dict]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM realtors WHERE id = ?", (realtor_id,))
         row = cursor.fetchone()
@@ -250,6 +277,21 @@ class Database:
             cursor.execute("""
                 INSERT INTO clients (surname, name, patronymic, phone, email)
                 VALUES (?, ?, ?, ?, ?)
+            """, (surname.strip() if surname else None, 
+                  name.strip() if name else None, 
+                  patronymic.strip() if patronymic else None, 
+                  phone, email))
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при добавлении клиента: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def update_client(self, client_id: int, surname: Optional[str], name: Optional[str], patronymic: Optional[str],
+                     phone: Optional[str], email: Optional[str]):
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT id FROM clients WHERE id = ?", (client_id,))
@@ -269,6 +311,19 @@ class Database:
                 UPDATE clients 
                 SET surname = ?, name = ?, patronymic = ?, phone = ?, email = ?
                 WHERE id = ?
+            """, (surname.strip() if surname else None, 
+                  name.strip() if name else None, 
+                  patronymic.strip() if patronymic else None, 
+                  phone, email, client_id))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при обновлении клиента: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def delete_client(self, client_id: int) -> bool:
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT id FROM clients WHERE id = ?", (client_id,))
@@ -300,6 +355,12 @@ class Database:
                 WHERE surname LIKE ? OR name LIKE ? OR patronymic LIKE ? 
                    OR phone LIKE ? OR email LIKE ?
                 ORDER BY surname, name, patronymic
+            """, (search_pattern, search_pattern, search_pattern, search_pattern, search_pattern))
+        else:
+            cursor.execute("SELECT * FROM clients ORDER BY surname, name, patronymic")
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def get_client(self, client_id: int) -> Optional[Dict]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM clients WHERE id = ?", (client_id,))
         row = cursor.fetchone()
@@ -322,20 +383,64 @@ class Database:
             cursor.execute("""
                 INSERT INTO properties (type, city, street, house_number, apartment_number, latitude, longitude)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (property_type, city, street, house_number, apartment_number, latitude, longitude))
+            property_id = cursor.lastrowid
+            
+            if property_type == 'apartment':
+                cursor.execute("""
                     INSERT INTO apartments (property_id, floor, rooms, area)
                     VALUES (?, ?, ?, ?)
+                """, (property_id, kwargs.get('floor'), kwargs.get('rooms'), kwargs.get('area')))
+            elif property_type == 'house':
+                cursor.execute("""
                     INSERT INTO houses (property_id, floors, rooms, area)
                     VALUES (?, ?, ?, ?)
+                """, (property_id, kwargs.get('floors'), kwargs.get('rooms'), kwargs.get('area')))
+            elif property_type == 'land':
+                cursor.execute("""
                     INSERT INTO lands (property_id, area)
                     VALUES (?, ?)
+                """, (property_id, kwargs.get('area')))
+            
+            self.conn.commit()
+            return property_id
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при добавлении объекта недвижимости: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def update_property(self, property_id: int, city: Optional[str] = None, street: Optional[str] = None,
+                       house_number: Optional[str] = None, apartment_number: Optional[str] = None,
+                       latitude: Optional[float] = None, longitude: Optional[float] = None,
+                       **kwargs):
         cursor = self.conn.cursor()
         cursor.execute("""
             UPDATE properties 
             SET city = ?, street = ?, house_number = ?, apartment_number = ?, latitude = ?, longitude = ?
             WHERE id = ?
+        """, (city, street, house_number, apartment_number, latitude, longitude, property_id))
+        
+        cursor.execute("SELECT type FROM properties WHERE id = ?", (property_id,))
+        property_type = cursor.fetchone()[0]
+        
+        if property_type == 'apartment':
+            cursor.execute("""
                 UPDATE apartments SET floor = ?, rooms = ?, area = ? WHERE property_id = ?
+            """, (kwargs.get('floor'), kwargs.get('rooms'), kwargs.get('area'), property_id))
+        elif property_type == 'house':
+            cursor.execute("""
                 UPDATE houses SET floors = ?, rooms = ?, area = ? WHERE property_id = ?
+            """, (kwargs.get('floors'), kwargs.get('rooms'), kwargs.get('area'), property_id))
+        elif property_type == 'land':
+            cursor.execute("""
                 UPDATE lands SET area = ? WHERE property_id = ?
+            """, (kwargs.get('area'), property_id))
+        
+        self.conn.commit()
+    
+    def delete_property(self, property_id: int) -> bool:
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM offers WHERE property_id = ?", (property_id,))
         if cursor.fetchone()[0] > 0:
@@ -436,6 +541,17 @@ class Database:
             cursor.execute("""
                 INSERT INTO offers (client_id, realtor_id, property_id, price, rental_period)
                 VALUES (?, ?, ?, ?, ?)
+            """, (client_id, realtor_id, property_id, price, rental_period))
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при добавлении предложения: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def update_offer(self, offer_id: int, client_id: int, realtor_id: int, property_id: int, price: int, rental_period: int):
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT id FROM offers WHERE id = ?", (offer_id,))
@@ -463,6 +579,16 @@ class Database:
                 UPDATE offers 
                 SET client_id = ?, realtor_id = ?, property_id = ?, price = ?, rental_period = ?
                 WHERE id = ?
+            """, (client_id, realtor_id, property_id, price, rental_period, offer_id))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            logger.error(f"Ошибка при обновлении предложения: {e}")
+            raise
+        except ValueError as e:
+            raise
+    
+    def delete_offer(self, offer_id: int) -> bool:
         try:
             cursor = self.conn.cursor()
             cursor.execute("SELECT id FROM offers WHERE id = ?", (offer_id,))
@@ -485,7 +611,7 @@ class Database:
     def get_offers(self) -> List[Dict]:
         cursor = self.conn.cursor()
         cursor.execute("""
-            SELECT o.*, 
+                SELECT o.*, 
                    c.surname || ' ' || c.name || ' ' || COALESCE(c.patronymic, '') as client_name,
                    r.surname || ' ' || r.name || ' ' || COALESCE(r.patronymic, '') as realtor_name,
                    p.type as property_type
@@ -494,6 +620,10 @@ class Database:
             LEFT JOIN realtors r ON o.realtor_id = r.id
             LEFT JOIN properties p ON o.property_id = p.id
             ORDER BY o.id
+        """)
+        return [dict(row) for row in cursor.fetchall()]
+    
+    def get_offer(self, offer_id: int) -> Optional[Dict]:
         cursor = self.conn.cursor()
         cursor.execute("""
             SELECT o.*, 
@@ -505,6 +635,19 @@ class Database:
             LEFT JOIN realtors r ON o.realtor_id = r.id
             LEFT JOIN properties p ON o.property_id = p.id
             WHERE o.id = ?
+        """, (offer_id,))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        
+        offer = dict(row)
+        prop = self.get_property(offer['property_id'])
+        if prop:
+            offer['property'] = prop
+        
+        return offer
+    
+    def get_offers_by_client(self, client_id: int) -> List[Dict]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM offers WHERE client_id = ?", (client_id,))
         return [dict(row) for row in cursor.fetchall()]
@@ -524,12 +667,37 @@ class Database:
                                house_number, apartment_number, min_price, max_price,
                                min_rental_period, max_rental_period)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (client_id, realtor_id, property_type, city, street, house_number, 
+              apartment_number, min_price, max_price, min_rental_period, max_rental_period))
+        demand_id = cursor.lastrowid
+        
+        if property_type == 'apartment':
+            cursor.execute("""
                 INSERT INTO apartment_demands (demand_id, min_area, max_area, min_rooms, max_rooms, min_floor, max_floor)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (demand_id, kwargs.get('min_area'), kwargs.get('max_area'),
+                  kwargs.get('min_rooms'), kwargs.get('max_rooms'),
+                  kwargs.get('min_floor'), kwargs.get('max_floor')))
+        elif property_type == 'house':
+            cursor.execute("""
                 INSERT INTO house_demands (demand_id, min_area, max_area, min_rooms, max_rooms, min_floors, max_floors)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (demand_id, kwargs.get('min_area'), kwargs.get('max_area'),
+                  kwargs.get('min_rooms'), kwargs.get('max_rooms'),
+                  kwargs.get('min_floors'), kwargs.get('max_floors')))
+        elif property_type == 'land':
+            cursor.execute("""
                 INSERT INTO land_demands (demand_id, min_area, max_area)
                 VALUES (?, ?, ?)
+            """, (demand_id, kwargs.get('min_area'), kwargs.get('max_area')))
+        
+        self.conn.commit()
+        return demand_id
+    
+    def update_demand(self, demand_id: int, client_id: int, realtor_id: int, property_type: str,
+                     city: Optional[str], street: Optional[str], house_number: Optional[str],
+                     apartment_number: Optional[str], min_price: int, max_price: int,
+                     min_rental_period: int, max_rental_period: int, **kwargs):
         cursor = self.conn.cursor()
         cursor.execute("""
             UPDATE demands 
@@ -537,15 +705,35 @@ class Database:
                 house_number = ?, apartment_number = ?, min_price = ?, max_price = ?,
                 min_rental_period = ?, max_rental_period = ?
             WHERE id = ?
+        """, (client_id, realtor_id, property_type, city, street, house_number,
+              apartment_number, min_price, max_price, min_rental_period, max_rental_period, demand_id))
+        
+        if property_type == 'apartment':
+            cursor.execute("""
                 UPDATE apartment_demands 
                 SET min_area = ?, max_area = ?, min_rooms = ?, max_rooms = ?, min_floor = ?, max_floor = ?
                 WHERE demand_id = ?
+            """, (kwargs.get('min_area'), kwargs.get('max_area'),
+                  kwargs.get('min_rooms'), kwargs.get('max_rooms'),
+                  kwargs.get('min_floor'), kwargs.get('max_floor'), demand_id))
+        elif property_type == 'house':
+            cursor.execute("""
                 UPDATE house_demands 
                 SET min_area = ?, max_area = ?, min_rooms = ?, max_rooms = ?, min_floors = ?, max_floors = ?
                 WHERE demand_id = ?
+            """, (kwargs.get('min_area'), kwargs.get('max_area'),
+                  kwargs.get('min_rooms'), kwargs.get('max_rooms'),
+                  kwargs.get('min_floors'), kwargs.get('max_floors'), demand_id))
+        elif property_type == 'land':
+            cursor.execute("""
                 UPDATE land_demands 
                 SET min_area = ?, max_area = ?
                 WHERE demand_id = ?
+            """, (kwargs.get('min_area'), kwargs.get('max_area'), demand_id))
+        
+        self.conn.commit()
+    
+    def delete_demand(self, demand_id: int) -> bool:
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM deals WHERE demand_id = ?", (demand_id,))
         if cursor.fetchone()[0] > 0:
@@ -564,6 +752,31 @@ class Database:
             LEFT JOIN clients c ON d.client_id = c.id
             LEFT JOIN realtors r ON d.realtor_id = r.id
             ORDER BY d.id
+        """)
+        demands = [dict(row) for row in cursor.fetchall()]
+        
+        for demand in demands:
+            demand_id = demand['id']
+            prop_type = demand['property_type']
+            if prop_type == 'apartment':
+                cursor.execute("SELECT * FROM apartment_demands WHERE demand_id = ?", (demand_id,))
+                row = cursor.fetchone()
+                if row:
+                    demand.update(dict(row))
+            elif prop_type == 'house':
+                cursor.execute("SELECT * FROM house_demands WHERE demand_id = ?", (demand_id,))
+                row = cursor.fetchone()
+                if row:
+                    demand.update(dict(row))
+            elif prop_type == 'land':
+                cursor.execute("SELECT * FROM land_demands WHERE demand_id = ?", (demand_id,))
+                row = cursor.fetchone()
+                if row:
+                    demand.update(dict(row))
+        
+        return demands
+    
+    def get_demand(self, demand_id: int) -> Optional[Dict]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM demands WHERE id = ?", (demand_id,))
         row = cursor.fetchone()
